@@ -1,0 +1,83 @@
+import csv, os
+import pyperclip
+
+# Input Variables that change each time
+voyage_id = 'XPO250216'  # Example day-specific folder name
+voyage_type = 'Antarctic Explorer'
+
+# Define the root directory automatically based on voyage_id
+base_dir = 'D:/CTD/SWiFT CTD'
+year = '20' + voyage_id[3:5]  # Extracts year from the voyage_id
+root_dir = f'{base_dir} - Submarine/{year}'
+
+# Dynamic input/output paths
+input_dir = f'{root_dir}/{voyage_id}/'
+output_dir = input_dir  # Output in the same folder as the input files
+
+data_filename = '{filename}_ODV.csv'
+all_data_filename = '{voyage_id}_all_ODV.csv'
+
+metadata_to_include = ['Latitude', 'Longitude']
+metadata_units = ['DD', 'DD']
+
+month_names = {'01': 'Jan', '02': 'Feb', '03': 'Mar', '04': 'Apr', '05': 'May', '06': 'Jun',
+               '07': 'Jul', '08': 'Aug', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dec'}
+
+# Function to save data to CSV
+def save_data(data, filepath):
+    print(f'Saving data: {filepath}')
+    nrows = {len(v) for v in data.values() if len(v) > 0}
+    
+    # Debugging output: Show the length of each column
+    for key, value in data.items():
+        print(f'Column: {key}, Rows: {len(value)}')
+    
+    if len(nrows) != 1:
+        print("Column length mismatch detected!")
+        for key, value in data.items():
+            print(f'Column: {key}, Rows: {len(value)}')
+        max_rows = max((len(v) for v in data.values() if len(v) > 0), default=0)
+        for key in data:
+            if len(data[key]) < max_rows:
+                data[key].extend([''] * (max_rows - len(data[key])))
+        nrows = max_rows
+        print("Mismatched columns were padded with empty strings.")
+    else:
+        nrows = nrows.pop()
+
+    with open(filepath, 'w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file, dialect='excel') 
+        writer.writerow(list(data.keys()))
+        for i in range(nrows):
+            writer.writerow([data[k][i] for k in data.keys()])
+
+# Function to process VP2 files
+def process_vp2(voyage_id, voyage_type, input_dir, output_dir, data_filename, all_data_filename, metadata_to_include, metadata_units):
+    print(f'Looking for .vp2 files in {input_dir}...')
+    all_files = os.listdir(input_dir)
+    print(f'Files in directory: {all_files}')
+    vp2files = [(file.removesuffix('.vp2'), f"{input_dir}{file}") for file in all_files if file.endswith('.vp2')]
+    print(f'Found {len(vp2files)} .vp2 files: {[f[0] for f in vp2files]}')
+
+    all_data = {}
+    all_data_size = 0
+
+    for filename, filepath in vp2files:
+        print(f'Processing file: {filename}')
+        with open(filepath, 'r') as csv_file:
+            reader = csv.reader(csv_file, delimiter='\t')
+            header_metadata = {}
+
+            for header_row in reader:
+                if len(header_row) >= 1 and header_row[0] == '[HEADER]':
+                    for row in reader:
+                        if len(row) == 0 or row[0] == '':
+                            break
+                        else:
+                            k, v = row[0].split('=', 1)
+                            header_metadata[k] = v
+
+                if len(header_row) >= 1 and header_row[0] == '[DATA]':
+                    column_titles = [c.strip() for c in next(reader)]
+                    column_units = [c.strip() for c in next(reader)]
+                    column_labels = [f'{title} [{unit}]' if unit else title for title, unit in zip(column_titles, column_units)]
